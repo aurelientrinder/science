@@ -19,7 +19,7 @@ load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 if api_key and api_key != "your_api_key_here":
     client = genai.Client(api_key=api_key)
-    # Correct model ID for Gemini 3 Flash Thinking
+    # Gemini 3 Flash with thinking support
     MODEL_ID = "gemini-3-flash-preview"
 else:
     client = None
@@ -78,6 +78,7 @@ class ChatRequest(BaseModel):
     latex_context: str
     image: Optional[str] = None
     history: Optional[list[ChatMessage]] = None
+    agent_mode: bool = False
 
 @app.post("/chat")
 async def chat_with_gemini(request: ChatRequest):
@@ -99,7 +100,41 @@ async def chat_with_gemini(request: ChatRequest):
             role_label = "User" if msg.role == "user" else "Assistant"
             history_str += f"{role_label}: {msg.content}\n"
     
-    text_prompt = f"""
+    # Build the prompt based on agent mode
+    if request.agent_mode:
+        text_prompt = f"""
+    You are an AI coding agent in OpenScience Prism, a LaTeX editor for writing papers. You have the ability to directly modify the user's LaTeX code.
+
+    AGENT MODE GUIDELINES:
+    - When the user asks you to make changes to their document, you MUST provide the complete updated LaTeX code.
+    - Wrap your code changes with special markers: <<<APPLY_CODE>>> at the start and <<<END_CODE>>> at the end.
+    - Always provide the COMPLETE LaTeX document between these markers, not just the changed parts.
+    - Before the code block, briefly explain what changes you're making.
+    - After making changes, confirm what was modified.
+    - If the user's request is unclear, ask for clarification before making changes.
+    - Be proactive: if you see obvious improvements, suggest and apply them.
+
+    EXAMPLE FORMAT:
+    I'll add a new section about methodology to your document.
+
+    <<<APPLY_CODE>>>
+    \\documentclass{{article}}
+    ... (complete LaTeX code here) ...
+    \\end{{document}}
+    <<<END_CODE>>>
+
+    I've added a new "Methodology" section after the Introduction.
+
+    CURRENT LATEX SOURCE:
+    ```latex
+    {request.latex_context}
+    ```
+    {history_str}
+    USER MESSAGE:
+    {request.message}
+    """
+    else:
+        text_prompt = f"""
     You are a friendly and helpful scientific research assistant in OpenScience Prism, a LaTeX editor for writing papers.
     
     GUIDELINES:
@@ -133,8 +168,13 @@ async def chat_with_gemini(request: ChatRequest):
     async def generate_stream():
         try:
             # Use GenerateContentConfig to enable Thinking and Code Execution
+            # For Gemini 3: use thinking_level (not thinking_budget)
+            # include_thoughts=True returns thought summaries in the response
             config = types.GenerateContentConfig(
-                thinking_config={"thinking_level": "high"},
+                thinking_config=types.ThinkingConfig(
+                    thinking_level="high",
+                    include_thoughts=True
+                ),
                 tools=[types.Tool(code_execution=types.ToolCodeExecution())]
             )
 
@@ -146,9 +186,21 @@ async def chat_with_gemini(request: ChatRequest):
             )
             
             for chunk in response_stream:
-                if chunk.text:
-                    # Send as Server-Sent Event
-                    yield f"data: {json.dumps({'content': chunk.text})}\n\n"
+                if not chunk.candidates or not chunk.candidates[0].content or not chunk.candidates[0].content.parts:
+                    continue
+                    
+                for part in chunk.candidates[0].content.parts:
+                    # Check if this is a thought part (thought summary)
+                    # For Gemini 3, part.thought is True for thought summaries
+                    is_thought = getattr(part, "thought", False)
+                    part_text = getattr(part, "text", None)
+                    
+                    if is_thought and part_text:
+                        # This is a thought summary
+                        yield f"data: {json.dumps({'thought': part_text})}\n\n"
+                    elif part_text:
+                        # Regular content
+                        yield f"data: {json.dumps({'content': part_text})}\n\n"
             
             # Signal end of stream
             yield f"data: {json.dumps({'done': True})}\n\n"
