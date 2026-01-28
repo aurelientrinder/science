@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Send, Sparkles, Bot, User, X, AlertCircle, Trash2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -19,6 +19,7 @@ interface ResearchAssistantProps {
   latexCode: string;
   screenshot: string | null;
   onScreenshotConsumed: () => void;
+  docked?: boolean;
 }
 
 const STORAGE_KEY = "research-assistant-messages";
@@ -28,7 +29,88 @@ const DEFAULT_MESSAGE: Message = {
   content: "Hello! I'm your Gemini 3 co-scientist. I can help you research topics, fact-check your paper, or suggest improvements based on your LaTeX code. What are we working on?",
 };
 
-export default function ResearchAssistant({ isOpen, onClose, latexCode, screenshot, onScreenshotConsumed }: ResearchAssistantProps) {
+// Define Markdown components outside to ensure stability and prevent re-mounting
+const MARKDOWN_COMPONENTS = {
+  code({ node, children, ...props }: any) {
+    const className = node?.properties?.className?.join(' ') || '';
+    const match = /language-(\w+)/.exec(className);
+    const isInline = !match && !className;
+    return !isInline && match ? (
+      <div className="my-2 rounded border border-zinc-200 overflow-hidden text-[12px] animate-fade-in">
+        <SyntaxHighlighter
+          style={vscDarkPlus as any}
+          language={match[1]}
+          PreTag="div"
+        >
+          {String(children).replace(/\n$/, "")}
+        </SyntaxHighlighter>
+      </div>
+    ) : (
+      <code className="bg-zinc-100 px-1.5 py-0.5 rounded text-zinc-900 font-mono text-xs border border-zinc-200" {...props}>
+        {children}
+      </code>
+    );
+  },
+  p: ({ children }: any) => <p className="mb-2 last:mb-0 animate-fade-in">{children}</p>,
+  ul: ({ children }: any) => <ul className="list-disc ml-4 mb-2 marker:text-zinc-400 animate-fade-in">{children}</ul>,
+  ol: ({ children }: any) => <ol className="list-decimal ml-4 mb-2 marker:text-zinc-400 animate-fade-in">{children}</ol>,
+  li: ({ children }: any) => <li className="mb-1 animate-fade-in">{children}</li>,
+  h1: ({ children }: any) => <h1 className="text-base font-bold mb-2 text-zinc-900 animate-fade-in">{children}</h1>,
+  h2: ({ children }: any) => <h2 className="text-sm font-bold mb-2 text-zinc-900 animate-fade-in">{children}</h2>,
+  h3: ({ children }: any) => <h3 className="text-sm font-semibold mb-1 text-zinc-900 animate-fade-in">{children}</h3>,
+};
+
+// Memoized Message Item to prevent re-renders when input changes
+const MessageItem = React.memo(({ msg }: { msg: Message }) => {
+  return (
+    <div className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
+      <div
+        className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 border ${msg.role === "user" ? "bg-zinc-900 border-zinc-900" : "bg-white border-zinc-200"}`}
+      >
+        {msg.role === "user" ? (
+          <User size={14} className="text-white" />
+        ) : (
+          <img 
+            src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Google_Gemini_icon_2025.svg/960px-Google_Gemini_icon_2025.svg.png" 
+            alt="Gemini" 
+            className="w-5 h-5 object-contain"
+          />
+        )}
+      </div>
+      <div className={`max-w-[85%] flex flex-col gap-2`}>
+        {msg.image && (
+          <div className="rounded-sm overflow-hidden border border-zinc-200 shadow-sm animate-fade-in">
+            <img src={msg.image} alt="Visual Context" className="w-full h-auto" />
+          </div>
+        )}
+        <div
+          className={`text-sm leading-relaxed ${msg.role === "user"
+              ? "text-zinc-900 font-medium text-right"
+              : "text-zinc-600"
+          }`}
+        >
+          {msg.role === "assistant" ? (
+            <ReactMarkdown components={MARKDOWN_COMPONENTS}>
+              {msg.content}
+            </ReactMarkdown>
+          ) : (
+            <div className="whitespace-pre-wrap animate-fade-in">{msg.content}</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+MessageItem.displayName = "MessageItem";
+
+export default function ResearchAssistant({
+  isOpen,
+  onClose,
+  latexCode,
+  screenshot,
+  onScreenshotConsumed,
+  docked = false,
+}: ResearchAssistantProps) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([DEFAULT_MESSAGE]);
   const [isLoading, setIsLoading] = useState(false);
@@ -68,6 +150,22 @@ export default function ResearchAssistant({ isOpen, onClose, latexCode, screensh
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isLoading, isStreaming]);
+
+  useEffect(() => {
+    if (isOpen) {
+      const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      };
+      
+      scrollToBottom();
+      const timer1 = setTimeout(scrollToBottom, 100);
+      const timer2 = setTimeout(scrollToBottom, 350);
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+      };
+    }
+  }, [isOpen]);
 
   // Handle incoming screenshot from parent
   useEffect(() => {
@@ -199,111 +297,59 @@ export default function ResearchAssistant({ isOpen, onClose, latexCode, screensh
     localStorage.removeItem(STORAGE_KEY);
   };
 
-  if (!isOpen) return null;
+  if (!isOpen && !docked) return null;
+
+  const containerClassName = docked
+    ? `h-full w-full min-w-[280px] bg-white flex flex-col transition-opacity duration-200 ease-out ${isOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`
+    : `fixed top-12 right-0 bottom-0 w-96 bg-white border-l border-zinc-200 shadow-xl flex flex-col z-50 transition-all duration-200 ease-out ${isOpen ? "opacity-100 translate-x-0" : "opacity-0 translate-x-full pointer-events-none"}`;
 
   return (
-    <div className="fixed top-12 right-0 bottom-0 w-96 bg-gray-900 border-l border-gray-700 shadow-2xl flex flex-col z-50 animate-in slide-in-from-right duration-300">
+    <div className={containerClassName}>
       {/* Header */}
-      <div className="h-12 border-b border-gray-700 bg-gray-800 flex items-center px-4 justify-between shrink-0">
-        <div className="flex items-center gap-2 text-purple-400">
-          <Sparkles size={18} />
-          <span className="font-semibold text-sm">Gemini 3 Research Agent</span>
+      <div className="h-12 border-b border-zinc-200 bg-white/50 backdrop-blur-sm flex items-center px-4 justify-between shrink-0">
+        <div className="flex items-center gap-2 text-zinc-900">
+          <Sparkles size={16} className="text-zinc-900" />
+          <span className="font-medium text-sm tracking-tight">Research Assistant</span>
         </div>
         <div className="flex items-center gap-2">
           <button 
             onClick={clearChat} 
-            className="text-gray-400 hover:text-red-400 transition-colors"
+            className="text-zinc-400 hover:text-zinc-900 transition-colors"
             title="Clear chat history"
           >
             <Trash2 size={16} />
           </button>
-          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-900 transition-colors">
             <X size={18} />
           </button>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-900 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-white custom-scrollbar">
         {messages.filter((msg) => msg.role === "user" || msg.content).map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}
-          >
-            <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${msg.role === "user" ? "bg-blue-600" : "bg-purple-600 shadow-[0_0_10px_rgba(168,85,247,0.4)]"}`}
-            >
-              {msg.role === "user" ? <User size={14} className="text-white" /> : <Bot size={14} className="text-white" />}
-            </div>
-            <div className={`max-w-[85%] flex flex-col gap-2`}>
-              {msg.image && (
-                <div className="rounded-lg overflow-hidden border border-gray-600 shadow-sm">
-                  <img src={msg.image} alt="Visual Context" className="w-full h-auto" />
-                </div>
-              )}
-              <div
-                className={`rounded-2xl px-4 py-2 text-sm leading-relaxed ${msg.role === "user"
-                    ? "bg-blue-600 text-white rounded-tr-none"
-                    : "bg-gray-800 text-gray-200 border border-gray-700 rounded-tl-none"
-                }`}
-              >
-                {msg.role === "assistant" ? (
-                  <ReactMarkdown
-                    components={{
-                      code({ node, children, ...props }: any) {
-                        const className = node?.properties?.className?.join(' ') || '';
-                        const match = /language-(\w+)/.exec(className);
-                        const isInline = !match && !className;
-                        return !isInline && match ? (
-                          <div className="my-2 rounded-md overflow-hidden text-[12px]">
-                            <SyntaxHighlighter
-                              style={vscDarkPlus as any}
-                              language={match[1]}
-                              PreTag="div"
-                            >
-                              {String(children).replace(/\n$/, "")}
-                            </SyntaxHighlighter>
-                          </div>
-                        ) : (
-                          <code className="bg-gray-700 px-1 rounded text-pink-400" {...props}>
-                            {children}
-                          </code>
-                        );
-                      },
-                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                      ul: ({ children }) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal ml-4 mb-2">{children}</ol>,
-                      li: ({ children }) => <li className="mb-1">{children}</li>,
-                      h1: ({ children }) => <h1 className="text-lg font-bold mb-2 border-b border-gray-700 pb-1">{children}</h1>,
-                      h2: ({ children }) => <h2 className="text-base font-bold mb-2">{children}</h2>,
-                      h3: ({ children }) => <h3 className="text-sm font-bold mb-1">{children}</h3>,
-                    }}
-                  >
-                    {msg.content}
-                  </ReactMarkdown>
-                ) : (
-                  <div className="whitespace-pre-wrap">{msg.content}</div>
-                )}
-              </div>
-            </div>
-          </div>
+          <MessageItem key={msg.id} msg={msg} />
         ))}
         
         {isLoading && !isStreaming && (
           <div className="flex gap-3 animate-pulse">
-            <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0">
-              <Bot size={14} className="text-white" />
+            <div className="w-8 h-8 rounded-full bg-white border border-zinc-200 flex items-center justify-center flex-shrink-0">
+              <img 
+                src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/1d/Google_Gemini_icon_2025.svg/960px-Google_Gemini_icon_2025.svg.png" 
+                alt="Gemini" 
+                className="w-5 h-5 object-contain opacity-50"
+              />
             </div>
-            <div className="bg-gray-800 border border-gray-700 rounded-2xl rounded-tl-none px-4 py-2 flex items-center gap-2">
-              <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce"></div>
-              <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce [animation-delay:0.2s]"></div>
-              <div className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+            <div className="flex items-center gap-1.5 pt-2">
+              <div className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce"></div>
+              <div className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+              <div className="w-1.5 h-1.5 bg-zinc-400 rounded-full animate-bounce [animation-delay:0.4s]"></div>
             </div>
           </div>
         )}
 
         {error && (
-          <div className="flex items-start gap-2 p-3 bg-red-900/20 border border-red-800 rounded-lg text-red-400 text-xs">
+          <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-100 rounded-md text-red-600 text-xs">
             <AlertCircle size={14} className="shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
@@ -312,22 +358,22 @@ export default function ResearchAssistant({ isOpen, onClose, latexCode, screensh
       </div>
 
       {/* Input */}
-      <div className="p-4 border-t border-gray-700 bg-gray-800">
-        <div className="flex gap-2">
+      <div className="p-4 border-t border-zinc-200 bg-white">
+        <div className="relative">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            placeholder="Ask Gemini..."
-            className="flex-1 bg-gray-900 text-white text-sm rounded-xl border border-gray-700 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all placeholder:text-gray-500"
+            placeholder="Ask a question..."
+            className="w-full bg-white text-zinc-900 text-sm rounded-lg border border-zinc-300 pl-4 pr-12 py-3 focus:outline-none focus:ring-1 focus:ring-zinc-400 focus:border-zinc-400 transition-all placeholder:text-zinc-400 shadow-sm"
           />
           <button
             onClick={handleSend}
             disabled={isLoading || !input.trim()}
-            className="bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white p-2.5 rounded-xl transition-all shadow-lg shadow-purple-900/20"
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-zinc-500 hover:text-zinc-900 disabled:opacity-30 disabled:hover:text-zinc-500 transition-colors"
           >
-            <Send size={18} />
+            <Send size={16} />
           </button>
         </div>
       </div>
