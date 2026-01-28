@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #18181b; /* zinc-900 */
+}
+
+.dark {
+  --background: #09090b; /* zinc-950 */
+  --foreground: #f4f4f5; /* zinc-100 */
 }
 
 @theme inline {
@@ -10,13 +17,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #09090b; /* zinc-950 */
-    --foreground: #f4f4f5; /* zinc-100 */
-  }
 }
 
 body {
@@ -45,18 +45,19 @@ body {
   background: #d4d4d8; /* zinc-300 */
 }
 
-@media (prefers-color-scheme: dark) {
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #27272a; /* zinc-800 */
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #3f3f46; /* zinc-700 */
-  }
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #27272a; /* zinc-800 */
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46; /* zinc-700 */
 }
 
 /* Panel resize animation - only during programmatic changes */
 .panel-transition [data-panel] {
-  transition: flex-grow 300ms ease-out, flex-shrink 300ms ease-out;
+  transition:
+    flex-grow 300ms ease-out,
+    flex-shrink 300ms ease-out;
 }
 
 .panel-transition [data-separator] {

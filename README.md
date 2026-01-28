@@ -1,6 +1,6 @@
-# OpenScience Prism
+# Carbon
 
-An AI-enhanced research and paper writing workspace, inspired by OpenAI Prism.
+An AI-enhanced research and paper writing workspace.
 
 ## Project Structure
 

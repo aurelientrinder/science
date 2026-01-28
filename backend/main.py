@@ -24,7 +24,7 @@ if api_key and api_key != "your_api_key_here":
 else:
     client = None
 
-app = FastAPI(title="OpenScience Prism API")
+app = FastAPI(title="Carbon API")
 
 # Allow CORS
 origins = [
@@ -42,7 +42,7 @@ app.add_middleware(
 
 @app.get("/")
 def read_root():
-    return {"message": "OpenScience Prism API is running!"}
+    return {"message": "Carbon API is running!"}
 
 @app.get("/health")
 def health_check():
@@ -103,7 +103,7 @@ async def chat_with_gemini(request: ChatRequest):
     # Build the prompt based on agent mode
     if request.agent_mode:
         text_prompt = f"""
-    You are an AI coding agent in OpenScience Prism, a LaTeX editor for writing papers. You have the ability to directly modify the user's LaTeX code.
+    You are an AI coding agent in Carbon, a LaTeX editor for writing papers. You have the ability to directly modify the user's LaTeX code.
 
     AGENT MODE GUIDELINES:
     - When the user asks you to make changes to their document, you MUST provide the complete updated LaTeX code.
@@ -135,7 +135,7 @@ async def chat_with_gemini(request: ChatRequest):
     """
     else:
         text_prompt = f"""
-    You are a friendly and helpful scientific research assistant in OpenScience Prism, a LaTeX editor for writing papers.
+    You are a friendly and helpful scientific research assistant in Carbon, a LaTeX editor for writing papers.
     
     GUIDELINES:
     - Be conversational and natural. Match the tone and length of your response to the user's message.
